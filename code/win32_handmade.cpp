@@ -15,6 +15,8 @@ typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
 
+typedef uint32 bool32;
+
 typedef struct
 {
     BITMAPINFO bitmapInfo;
@@ -138,6 +140,79 @@ LRESULT CALLBACK MainWindowCallback(HWND   windowHandle,
         case WM_ACTIVATEAPP:
         {
             //OutputDebugStringA("WM_ACTIVATEAPP\n");
+        } break;
+        
+        //case WM_SYSKEYDOWN:
+        //case WM_SYSKEYUP:
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+        {
+            uint32 VKCode = wParam;
+            bool keyWasDown = (lParam & (1 << 30)) != 0;
+            bool keyDown = (lParam & (1 << 31)) == 0;
+            if(keyDown != keyWasDown)
+            {
+                if (VKCode == 'W')
+                {
+                    
+                }
+                else if (VKCode == 'A')
+                {
+                    
+                }
+                else if (VKCode == 'S')
+                {
+                    
+                }
+                else if (VKCode == 'D')
+                {
+                    
+                }
+                else if (VKCode == 'Q')
+                {
+                    
+                }
+                else if (VKCode == 'E')
+                {
+                    
+                }
+                else if (VKCode == VK_UP)
+                {
+                    
+                }
+                else if (VKCode == VK_DOWN)
+                {
+                    
+                }
+                else if (VKCode == VK_LEFT)
+                {
+                    
+                }
+                else if (VKCode == VK_RIGHT)
+                {
+                    
+                }
+                else if (VKCode == VK_ESCAPE)
+                {
+                    
+                }
+                else if (VKCode == VK_SPACE)
+                {
+                    
+                }
+                else if (VKCode == VK_F4)
+                {
+                    bool32 altKeyPressed = (VKCode & (1<<29));
+                    if (altKeyPressed)
+                    {
+                        globalRunning = false;
+                    }
+                }
+                else if (VKCode == VK_CONTROL)
+                {
+                }
+            }
+            
         } break;
         
         case WM_PAINT:
