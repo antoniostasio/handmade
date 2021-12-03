@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <cstdint>
+#include <xinput.h>
 
 #define global_variable static
 #define local_persist static
@@ -31,6 +32,24 @@ typedef struct
     int width;
     int height;
 } dimensions;
+
+#define XINPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex,XINPUT_STATE *pState)
+typedef XINPUT_GET_STATE(xinput_get_state);
+XINPUT_GET_STATE(XInputGetStateStub)
+{
+    return ERROR_DEVICE_NOT_CONNECTED;
+}
+global_variable xinput_get_state *XInputGetState_ = XInputGetStateStub;
+#define XInputGetState XInputGetState_
+
+#define XINPUT_SET_STATE(name) DWORD name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
+typedef XINPUT_SET_STATE(xinput_set_state);
+XINPUT_SET_STATE(XInputSetStateStub)
+{
+    return ERROR_DEVICE_NOT_CONNECTED;
+}
+global_variable xinput_set_state *XInputSetState_ = XInputSetStateStub;
+#define XInputSetState XInputSetState_
 
 
 global_variable bitmap_buffer bitmapBuffer;
@@ -104,6 +123,23 @@ internal void Win32CopyBufferToWindow(HDC deviceContext, bitmap_buffer *buffer,
                   &buffer->bitmapInfo,
                   DIB_RGB_COLORS, SRCCOPY);
 
+}
+
+
+internal void LoadXInputLibrary()
+{
+    HMODULE XInputLib = LoadLibraryA("Xinput1_4.dll");
+    if(!XInputLib)
+        XInputLib = LoadLibraryA("Xinput1_3.dll");
+    if(XInputLib)
+    {
+        xinput_get_state *xgetstate = (xinput_get_state*) GetProcAddress(XInputLib , "XInputGetState");
+        if(xgetstate)
+            XInputGetState = xgetstate;
+        xinput_set_state *xsetstate = (xinput_set_state*) GetProcAddress(XInputLib , "XInputSetState");
+        if(xsetstate)
+            XInputSetState = xsetstate;
+    }
 }
 
 
@@ -269,6 +305,8 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                                             0);
         if (windowHandle)
         {
+            LoadXInputLibrary();
+            
             MSG message;
             BOOL messageReceived;
             globalRunning = true;
@@ -292,6 +330,9 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                         DispatchMessage(&message);
                     }
                 }
+                
+                // TODO controller input reading
+                
                 drawGradientTo(&bitmapBuffer, xOffset, xOffset);
                 
                 HDC deviceContext = GetDC(windowHandle);
