@@ -56,6 +56,10 @@ global_variable bitmap_buffer bitmapBuffer;
 
 global_variable bool globalRunning;
 
+global_variable int xOffset = 0;
+global_variable int yOffset = 0;
+global_variable int xSpeed = 0;
+global_variable int ySpeed = 0;
 
 internal dimensions getRectangleDimensionsFrom(HWND windowHandle)
 {
@@ -190,19 +194,31 @@ LRESULT CALLBACK MainWindowCallback(HWND   windowHandle,
             {
                 if (VKCode == 'W')
                 {
-                    
+                    if(keyDown)
+                        ySpeed -= 2;
+                    else
+                        ySpeed += 2;
                 }
                 else if (VKCode == 'A')
                 {
-                    
+                    if(keyDown)
+                        xSpeed -= 2;
+                    else
+                        xSpeed += 2;
                 }
                 else if (VKCode == 'S')
                 {
-                    
+                    if(keyDown)
+                        ySpeed += 2;
+                    else
+                        ySpeed -= 2;
                 }
                 else if (VKCode == 'D')
                 {
-                    
+                    if(keyDown)
+                        xSpeed += 2;
+                    else
+                        xSpeed -= 2;
                 }
                 else if (VKCode == 'Q')
                 {
@@ -310,7 +326,7 @@ int WINAPI wWinMain(HINSTANCE hInstance,
             MSG message;
             BOOL messageReceived;
             globalRunning = true;
-            int xOffset = 0;
+
             while (globalRunning)
             {
                 while(messageReceived = PeekMessageA(&message, 0, 0, 0, PM_REMOVE))
@@ -331,9 +347,47 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                     }
                 }
                 
-                // TODO controller input reading
+                // Controller input reading
+                DWORD dwResult;    
+                for (DWORD i=0; i< XUSER_MAX_COUNT; i++ )
+                {
+                    XINPUT_STATE state = {};
+                    
+                    // Simply get the state of the controller from XInput.
+                    dwResult = XInputGetState( i, &state );
+                    
+                    if( dwResult == ERROR_SUCCESS )
+                    {
+                        XINPUT_GAMEPAD *gamepad = &(state.Gamepad);
+                        WORD buttonPressed = gamepad->wButtons;
+                        if(buttonPressed & XINPUT_GAMEPAD_DPAD_UP)
+                        {
+                            --yOffset;
+                        }
+                        if(buttonPressed & XINPUT_GAMEPAD_DPAD_DOWN)
+                        {
+                            ++yOffset;
+                        }
+                        if(buttonPressed & XINPUT_GAMEPAD_DPAD_LEFT)
+                        {
+                            --xOffset;
+                        }
+                        if(buttonPressed & XINPUT_GAMEPAD_DPAD_RIGHT)
+                        {
+                            ++xOffset;
+                        }
+                        xOffset += (gamepad->sThumbLX * 0.0001);
+                        yOffset += (gamepad->sThumbLY * 0.0001);
+                    }
+                    else
+                    {
+                        // Controller is not connected
+                    }
+                }
+                xOffset += xSpeed;
+                yOffset += ySpeed;
                 
-                drawGradientTo(&bitmapBuffer, xOffset, xOffset);
+                drawGradientTo(&bitmapBuffer, xOffset, yOffset);
                 
                 HDC deviceContext = GetDC(windowHandle);
                 
@@ -342,8 +396,6 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                                         rectangleDimensions.width, rectangleDimensions.height);
                 
                 ReleaseDC(windowHandle, deviceContext);
-                
-                xOffset++;
             }
             
         }
