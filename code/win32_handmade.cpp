@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <cstdint>
 #include <xinput.h>
+#include <math.h>
 
 #define global_variable static
 #define local_persist static
@@ -376,8 +377,17 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                         {
                             ++xOffset;
                         }
-                        xOffset += (gamepad->sThumbLX * 0.0001);
-                        yOffset += (gamepad->sThumbLY * 0.0001);
+                        
+                        
+                        double lx = gamepad->sThumbLX;
+                        double ly = gamepad->sThumbLY;
+                        double magnitude = sqrt(lx*lx + ly*ly);
+                        
+                        if (magnitude > XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE)
+                        {
+                            xOffset += (lx * 0.0001);
+                            yOffset += (ly * 0.0001);
+                        }
                     }
                     else
                     {
