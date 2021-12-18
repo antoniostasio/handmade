@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <cstdint>
 #include <xinput.h>
+#include <xaudio2.h>
 #include <math.h>
 
 #define global_variable static
@@ -53,6 +54,16 @@ global_variable xinput_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 
 
+#define XAUDIO2_CREATE(name) HRESULT name(IXAudio2 **ppXAudio2, UINT32 Flags, XAUDIO2_PROCESSOR XAudio2Processor)
+typedef XAUDIO2_CREATE(xaudio2_create);
+XAUDIO2_CREATE(XAudio2CreateStub)
+{
+    return XAUDIO2_E_DEVICE_INVALIDATED;
+}
+global_variable xaudio2_create *XAudio2Create_ = XAudio2CreateStub;
+#define XAudio2Create XAudio2Create_
+
+
 global_variable bitmap_buffer bitmapBuffer;
 
 global_variable bool globalRunning;
@@ -83,9 +94,9 @@ internal void drawGradientTo(bitmap_buffer *buffer, int xPhase, int yPhase)
         uint32 *pixel = (uint32 *)row;
         for(int x=0; x<buffer->width; x++)
         {
-            uint8 green = (y + yPhase);
-            uint8 blue = (x + xPhase);
-            *pixel++ = (green << 8) | blue;
+            uint8 red = (y + yPhase);
+            uint8 green = (x + xPhase);
+            *pixel++ = (red << 16) | (green << 8);
         }
         row += pitch;
     }
@@ -144,6 +155,18 @@ internal void LoadXInputLibrary()
         xinput_set_state *xsetstate = (xinput_set_state*) GetProcAddress(XInputLib , "XInputSetState");
         if(xsetstate)
             XInputSetState = xsetstate;
+    }
+}
+
+
+internal void LoadXAudio2Library()
+{
+    HMODULE XAudio2Lib = LoadLibraryA("Xaudio2.lib");
+    if(XAudio2Lib)
+    {
+        xaudio2_create *xaudiocreate = (xaudio2_create *) GetProcAddress(XAudio2Lib, "XAudio2Create");
+        if(xaudiocreate)
+            XAudio2Create = xaudiocreate;
     }
 }
 
@@ -324,14 +347,53 @@ int WINAPI wWinMain(HINSTANCE hInstance,
         {
             LoadXInputLibrary();
             
+            /*// Audio engine setup
+            LoadXAudio2Library(); 
+            IXAudio2* pXAudio2 = nullptr;
+            if (XAudio2Create( &pXAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR ) == S_OK)
+            {
+                IXAudio2MasteringVoice* pMasterVoice = nullptr;
+                if (pXAudio2->CreateMasteringVoice( &pMasterVoice ) == S_OK)
+                {
+                    WAVEFORMATEX wfx = {0};
+                    wfx.wFormatTag = WAVE_FORMAT_PCM;
+                    wfx.nChannels = 2;
+                    wfx.nSamplesPerSec = 48000;
+                    wfx.wBitsPerSample = 16;
+                    wfx.nBlockAlign = (wfx.wBitsPerSample * wfx.nChannels) / 8;
+                    wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * wfx.nBlockAlign;
+
+                    XAUDIO2_BUFFER buffer = {0};
+                    // typedef struct XAUDIO2_BUFFER {
+                    //   void       *pContext;} // pointer to object implementing IXAudio2VoiceCallback interface
+                    
+                    uint32 bufferSize = wfx.nBlockAlign * wfx.nSamplesPerSec;
+                    BYTE * pDataBuffer = new BYTE[bufferSize];
+                    // populate buffer
+                    
+                    buffer.AudioBytes = bufferSize;  //size of the audio buffer in bytes
+                    buffer.pAudioData = pDataBuffer;  //buffer containing audio data
+                    // buffer.Flags = XAUDIO2_END_OF_STREAM;
+                    IXAudio2SourceVoice* pSourceVoice;
+                    if(pXAudio2->CreateSourceVoice(&pSourceVoice, (WAVEFORMATEX*) &wfx) == S_OK)
+                    {
+                        HRESULT hr;
+                        hr = pSourceVoice->SubmitSourceBuffer( &buffer ); // check success
+                        hr = pSourceVoice->Start(0); // check success
+                    }
+                }
+            }
+            */
+            
+            
             MSG message;
             BOOL messageReceived;
             globalRunning = true;
-
+            
             while (globalRunning)
             {
                 while(messageReceived = PeekMessageA(&message, 0, 0, 0, PM_REMOVE))
-                    {
+                {
                     if (messageReceived == -1)
                     {
                         // TODO
@@ -378,7 +440,6 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                             ++xOffset;
                         }
                         
-                        
                         double lx = gamepad->sThumbLX;
                         double ly = gamepad->sThumbLY;
                         double magnitude = sqrt(lx*lx + ly*ly);
@@ -393,6 +454,8 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                     {
                         // Controller is not connected
                     }
+
+                    
                 }
                 xOffset += xSpeed;
                 yOffset += ySpeed;
