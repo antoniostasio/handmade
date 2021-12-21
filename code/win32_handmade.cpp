@@ -35,6 +35,27 @@ typedef struct
     int height;
 } dimensions;
 
+struct StreamingVoiceContext : public IXAudio2VoiceCallback
+{
+    HANDLE hBufferEndEvent;
+    StreamingVoiceContext(): hBufferEndEvent(CreateEvent( NULL, FALSE, FALSE, NULL) ){}
+    ~StreamingVoiceContext()
+    {
+        CloseHandle(hBufferEndEvent);
+    }
+    void OnBufferEnd(void* pBufferContext)
+    {
+        SetEvent(hBufferEndEvent);
+        // free(pBufferContext);
+    }
+    void OnBufferStart(void *pBufferContext){}
+    void OnLoopEnd(void *pBufferContext){}
+    void OnStreamEnd(){}
+    void OnVoiceError(void *pBufferContext, HRESULT Error){}
+    void OnVoiceProcessingPassEnd(){}
+    void OnVoiceProcessingPassStart(UINT32 BytesRequired){}
+};
+
 #define XINPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex,XINPUT_STATE *pState)
 typedef XINPUT_GET_STATE(xinput_get_state);
 XINPUT_GET_STATE(XInputGetStateStub)
@@ -63,8 +84,12 @@ XAUDIO2_CREATE(XAudio2CreateStub)
 global_variable xaudio2_create *XAudio2Create_ = XAudio2CreateStub;
 #define XAudio2Create XAudio2Create_
 
+#define STREAMING_BUFFER_SIZE 192000
+#define MAX_BUFFER_COUNT 2
 
 global_variable bitmap_buffer bitmapBuffer;
+
+global_variable StreamingVoiceContext streamVoiceContext;
 
 global_variable bool globalRunning;
 
@@ -161,7 +186,7 @@ internal void LoadXInputLibrary()
 
 internal void LoadXAudio2Library()
 {
-    HMODULE XAudio2Lib = LoadLibraryA("Xaudio2.lib");
+    HMODULE XAudio2Lib = LoadLibraryA("XAudio2_9.dll");
     if(XAudio2Lib)
     {
         xaudio2_create *xaudiocreate = (xaudio2_create *) GetProcAddress(XAudio2Lib, "XAudio2Create");
@@ -319,6 +344,13 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                     PWSTR pCmdLine,
                     int nCmdShow)
 {
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(hr))
+    {
+        OutputDebugStringA("Failed to init COM\n");
+        return 0;
+    }
+    
     Win32ResizeDIBSection(&bitmapBuffer, 1280, 720);
     
     // Window properties definition
@@ -347,44 +379,34 @@ int WINAPI wWinMain(HINSTANCE hInstance,
         {
             LoadXInputLibrary();
             
-            /*// Audio engine setup
+            // Audio engine setup
             LoadXAudio2Library(); 
+            HRESULT hr; // TODO check every following hr assignment for success
             IXAudio2* pXAudio2 = nullptr;
-            if (XAudio2Create( &pXAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR ) == S_OK)
-            {
-                IXAudio2MasteringVoice* pMasterVoice = nullptr;
-                if (pXAudio2->CreateMasteringVoice( &pMasterVoice ) == S_OK)
-                {
-                    WAVEFORMATEX wfx = {0};
-                    wfx.wFormatTag = WAVE_FORMAT_PCM;
-                    wfx.nChannels = 2;
-                    wfx.nSamplesPerSec = 48000;
-                    wfx.wBitsPerSample = 16;
-                    wfx.nBlockAlign = (wfx.wBitsPerSample * wfx.nChannels) / 8;
-                    wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * wfx.nBlockAlign;
-
-                    XAUDIO2_BUFFER buffer = {0};
-                    // typedef struct XAUDIO2_BUFFER {
-                    //   void       *pContext;} // pointer to object implementing IXAudio2VoiceCallback interface
-                    
-                    uint32 bufferSize = wfx.nBlockAlign * wfx.nSamplesPerSec;
-                    BYTE * pDataBuffer = new BYTE[bufferSize];
-                    // populate buffer
-                    
-                    buffer.AudioBytes = bufferSize;  //size of the audio buffer in bytes
-                    buffer.pAudioData = pDataBuffer;  //buffer containing audio data
-                    // buffer.Flags = XAUDIO2_END_OF_STREAM;
-                    IXAudio2SourceVoice* pSourceVoice;
-                    if(pXAudio2->CreateSourceVoice(&pSourceVoice, (WAVEFORMATEX*) &wfx) == S_OK)
-                    {
-                        HRESULT hr;
-                        hr = pSourceVoice->SubmitSourceBuffer( &buffer ); // check success
-                        hr = pSourceVoice->Start(0); // check success
-                    }
-                }
-            }
-            */
             
+            hr = XAudio2Create(&pXAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR); // check success
+            IXAudio2MasteringVoice* pMasterVoice = nullptr;
+            hr = pXAudio2->CreateMasteringVoice( &pMasterVoice ); // check success
+        
+            WAVEFORMATEX format = {0};
+            format.wFormatTag = WAVE_FORMAT_PCM;
+            format.nChannels = 2;
+            format.nSamplesPerSec = 48000;
+            format.wBitsPerSample = 16;
+            format.nBlockAlign = (format.wBitsPerSample * format.nChannels) / 8;
+            format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
+            
+            IXAudio2SourceVoice* pSourceVoice;
+            hr = pXAudio2->CreateSourceVoice(&pSourceVoice, (WAVEFORMATEX*) &format, 0, 1.0F, &streamVoiceContext); // check success
+            hr = pSourceVoice->Start(0, 0); // check success
+
+
+            HANDLE heapHandle = GetProcessHeap();
+            BYTE *audioBuffers = (BYTE *)HeapAlloc(heapHandle, 
+                                              HEAP_ZERO_MEMORY,
+                                              MAX_BUFFER_COUNT * STREAMING_BUFFER_SIZE);
+            uint32 emptyBufferIndex = 0;
+            int waveIndex = 0;
             
             MSG message;
             BOOL messageReceived;
@@ -460,6 +482,43 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                 xOffset += xSpeed;
                 yOffset += ySpeed;
                 
+                // test audio
+                if(audioBuffers)
+                {
+                    uint32 bufferSize = format.nBlockAlign * format.nSamplesPerSec;
+                    BYTE * pDataBuffer;
+                    uint32 soundHz = 440;
+                    uint32 halfWaveletSamples = format.nSamplesPerSec / (2 * soundHz);
+                    
+                    XAUDIO2_VOICE_STATE state;
+                    pSourceVoice->GetState(&state);
+                    if(state.BuffersQueued < MAX_BUFFER_COUNT)
+                    {
+                        // populate pDataBuffer
+                        pDataBuffer = &(audioBuffers[STREAMING_BUFFER_SIZE*emptyBufferIndex]);
+                        int16 * sampleOut = (int16 *)pDataBuffer;
+                        int bytesPerSample = 2;
+                        int bufferSampleCount = STREAMING_BUFFER_SIZE / (bytesPerSample * format.nChannels);
+                        for(int sampleIndex=0; sampleIndex < bufferSampleCount; ++sampleIndex)
+                        {
+                            int16 sampleValue = ((waveIndex++ / halfWaveletSamples) % 2) ? 1000 : -1000;
+                            *sampleOut++ = sampleValue;
+                            *sampleOut++ = sampleValue;
+                        }
+                        
+                        XAUDIO2_BUFFER xaudioBuffer = {0};
+                        xaudioBuffer.pContext = &streamVoiceContext;
+                        xaudioBuffer.AudioBytes = bufferSize;  //size of the audio buffer in bytes
+                        xaudioBuffer.pAudioData = pDataBuffer;  //buffer containing audio data
+                        hr = pSourceVoice->SubmitSourceBuffer(&xaudioBuffer); // check success
+                        
+                        emptyBufferIndex++;
+                        emptyBufferIndex %= MAX_BUFFER_COUNT;
+                        OutputDebugStringA("buffer submitted");
+                    }
+                }
+
+                OutputDebugStringA("Out of loop\n");
                 drawGradientTo(&bitmapBuffer, xOffset, yOffset);
                 
                 HDC deviceContext = GetDC(windowHandle);
