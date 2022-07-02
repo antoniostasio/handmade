@@ -492,6 +492,7 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                     
                     XAUDIO2_VOICE_STATE state;
                     pSourceVoice->GetState(&state);
+                    // while(state.BuffersQueued < MAX_BUFFER_COUNT)
                     if(state.BuffersQueued < MAX_BUFFER_COUNT)
                     {
                         // populate pDataBuffer
@@ -514,7 +515,7 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                         
                         emptyBufferIndex++;
                         emptyBufferIndex %= MAX_BUFFER_COUNT;
-                        OutputDebugStringA("buffer submitted");
+                        pSourceVoice->GetState(&state);
                     }
                 }
 
