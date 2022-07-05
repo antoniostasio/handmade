@@ -2,20 +2,20 @@
 #include <cstdint>
 #include <xinput.h>
 #include <math.h>
+#include <dsound.h>
 
 #define global_variable static
-#define local_persist static
-#define internal static
+#define local_persist   static
+#define internal        static
 
-typedef uint8_t  uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
-
-typedef int8_t  int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
+typedef uint8_t     uint8;
+typedef uint16_t    uint16;
+typedef uint32_t    uint32;
+typedef uint64_t    uint64;
+typedef int8_t      int8;
+typedef int16_t     int16;
+typedef int32_t     int32;
+typedef int64_t     int64;
 
 typedef uint32 bool32;
 
@@ -34,29 +34,37 @@ typedef struct
     int height;
 } dimensions;
 
+// Function header macros
 #define XINPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex,XINPUT_STATE *pState)
+#define XINPUT_SET_STATE(name) DWORD name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
+#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPGUID lpGuid, LPDIRECTSOUND8* ppDS, LPUNKNOWN  pUnkOuter)
+// Define function type from macro
 typedef XINPUT_GET_STATE(xinput_get_state);
+typedef XINPUT_SET_STATE(xinput_set_state);
+typedef DIRECT_SOUND_CREATE(direct_sound_create);
+
+// Stub functions
 XINPUT_GET_STATE(XInputGetStateStub)
 {
     return ERROR_DEVICE_NOT_CONNECTED;
 }
-global_variable xinput_get_state *XInputGetState_ = XInputGetStateStub;
-#define XInputGetState XInputGetState_
 
-#define XINPUT_SET_STATE(name) DWORD name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
-typedef XINPUT_SET_STATE(xinput_set_state);
 XINPUT_SET_STATE(XInputSetStateStub)
 {
     return ERROR_DEVICE_NOT_CONNECTED;
 }
+
+// Global function pointers defaulted to stubs
+global_variable xinput_get_state *XInputGetState_ = XInputGetStateStub;
 global_variable xinput_set_state *XInputSetState_ = XInputSetStateStub;
+// Hide library function names
+#define XInputGetState XInputGetState_
 #define XInputSetState XInputSetState_
 
-
+// Global variables
 global_variable bitmap_buffer bitmapBuffer;
-
+global_variable LPDIRECTSOUNDBUFFER globalSecondaryBuffer = 0;
 global_variable bool globalRunning;
-
 global_variable int xOffset = 0;
 global_variable int yOffset = 0;
 global_variable int xSpeed = 0;
@@ -74,7 +82,7 @@ internal dimensions getRectangleDimensionsFrom(HWND windowHandle)
 }
 
 
-internal void drawGradientTo(bitmap_buffer *buffer, int xPhase, int yPhase)
+internal void drawGradientInto(bitmap_buffer *buffer, int xPhase, int yPhase)
 {
     int pitch = buffer->bitPerPixel*buffer->width;
     uint8 *row = (uint8 *)buffer->memory;
@@ -147,6 +155,48 @@ internal void LoadXInputLibrary()
     }
 }
 
+
+internal void Win32DirectSoundInit(HWND windowHandle, int samplesPerSecond, int bufferSize)
+{
+    HMODULE DirectSoundLib = LoadLibraryA("Dsound.dll");
+    if(DirectSoundLib)
+    {
+        // First a direct sound object is necessary to get access to the sound device
+        LPDIRECTSOUND8 directSound;
+        direct_sound_create *DirectSoundCreate = (direct_sound_create*) GetProcAddress(DirectSoundLib, "DirectSoundCreate8");
+        if(DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &directSound, NULL)))
+        {
+            // After the DSound object has been created we need to set the way the hardware is going to be used
+            if(SUCCEEDED(directSound->SetCooperativeLevel(windowHandle, DSSCL_PRIORITY)))
+            {
+                // A primary buffer is needed to set the format of the audio we're going to write in the actual buffer (secondary)
+                LPDIRECTSOUNDBUFFER primaryBuffer;
+                DSBUFFERDESC bufferDescription = {};
+                bufferDescription.dwSize = sizeof(bufferDescription);
+                bufferDescription.dwFlags = DSBCAPS_PRIMARYBUFFER;
+                if(SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &primaryBuffer, 0)))
+                {
+                    WAVEFORMATEX waveFormat = {};
+                    waveFormat.wFormatTag = WAVE_FORMAT_PCM;
+                    waveFormat.nChannels = 2;
+                    waveFormat.nSamplesPerSec = samplesPerSecond;
+                    waveFormat.wBitsPerSample = 16;
+                    waveFormat.nBlockAlign = (waveFormat.nChannels * waveFormat.wBitsPerSample) / 8;
+                    waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
+                    HRESULT hResult = primaryBuffer->SetFormat(&waveFormat);
+                    if(SUCCEEDED(hResult))
+                    {
+                        bufferDescription = {};
+                        bufferDescription.dwSize = sizeof(bufferDescription);
+                        bufferDescription.dwBufferBytes = bufferSize;
+                        bufferDescription.lpwfxFormat = &waveFormat;
+                        directSound->CreateSoundBuffer(&bufferDescription, &globalSecondaryBuffer, 0);
+                    }
+                }
+            }
+        }
+    }
+}
 
 LRESULT CALLBACK MainWindowCallback(HWND   windowHandle,
                                     UINT   messageID,
@@ -324,6 +374,15 @@ int WINAPI wWinMain(HINSTANCE hInstance,
         {
             LoadXInputLibrary();
             
+            int samplesPerSecond = 48000;
+            int bytesPerSample = sizeof(int16) * 2;
+            int bufferSize = 1 * bytesPerSample * samplesPerSecond;
+            Win32DirectSoundInit(windowHandle, samplesPerSecond, bufferSize);
+            
+            globalSecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+            int waveT = 0;
+            int waveHZ = 240;
+            
             MSG message;
             BOOL messageReceived;
             globalRunning = true;
@@ -397,14 +456,76 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                 xOffset += xSpeed;
                 yOffset += ySpeed;
                 
-                drawGradientTo(&bitmapBuffer, xOffset, yOffset);
+                drawGradientInto(&bitmapBuffer, xOffset, yOffset);
                 
                 HDC deviceContext = GetDC(windowHandle);
                 
                 dimensions rectangleDimensions = getRectangleDimensionsFrom(windowHandle);     
                 Win32CopyBufferToWindow(deviceContext, &bitmapBuffer,
                                         rectangleDimensions.width, rectangleDimensions.height);
+                                        
+                // TODO: test audio
                 
+                // Before writing in the audio buffer it's necessary to find 
+                // the locations where it can and should be written and lock those
+                DWORD playCursor;
+                DWORD safeToWriteCursor;
+                globalSecondaryBuffer->GetCurrentPosition(&playCursor, &safeToWriteCursor);
+
+                // Offset at which to start lock,  Size of lock
+                DWORD lockStartOffset = (waveT * bytesPerSample) % bufferSize;
+                DWORD lockSize = 0;
+                // Calculating how many bytes should be locked
+                if (lockStartOffset > safeToWriteCursor)
+                {
+                    lockSize = bufferSize - lockStartOffset + playCursor;
+                }
+                else if (lockStartOffset < playCursor)
+                {
+                    lockSize = playCursor - lockStartOffset;
+                }
+                
+                // Address and size of first part of lock.
+                LPVOID region1 = 0;
+                DWORD region1Size = 0;
+                // Address and size of wraparound. 
+                LPVOID region2 = 0;
+                DWORD region2Size = 0;
+                if (DS_OK == globalSecondaryBuffer->Lock(lockStartOffset, lockSize,     
+                                                         &region1, &region1Size,  
+                                                         &region2, &region2Size,  
+                                                         0))  // Flag.
+                {
+                    int16* region1Cursor = (int16 *)region1;
+                    int16* region2Cursor = (int16 *)region2;
+                    
+                    // Write a full sample each cycle
+                    int samplePeakValue = 1000;
+                    int waveHalfPeriod = samplesPerSecond / waveHZ;
+                    // Fill region 1
+                    for(int writeCursor = 0; 
+                        writeCursor*bytesPerSample < region1Size;
+                        writeCursor += bytesPerSample)
+                    {
+                        *region1Cursor = ((waveT/waveHalfPeriod) % 2) > 0 ? samplePeakValue : -samplePeakValue;
+                        ++region1Cursor;
+                        *region1Cursor = ((waveT/waveHalfPeriod) % 2) > 0 ? samplePeakValue : -samplePeakValue;
+                        ++region1Cursor;
+                        ++waveT;
+                    }
+                    // Fill region 2
+                    for(int writeCursor = 0; 
+                        writeCursor*bytesPerSample < region2Size;
+                        writeCursor += bytesPerSample)
+                    {
+                        *region2Cursor = ((waveT/waveHalfPeriod) % 2) > 0 ? samplePeakValue : -samplePeakValue;
+                        ++region2Cursor;
+                        *region2Cursor = ((waveT/waveHalfPeriod) % 2) > 0 ? samplePeakValue : -samplePeakValue;
+                        ++waveT;
+                    }
+                    
+                    globalSecondaryBuffer->Unlock(region1, region1Size, region2, region2Size);
+                }
                 ReleaseDC(windowHandle, deviceContext);
             }
             
