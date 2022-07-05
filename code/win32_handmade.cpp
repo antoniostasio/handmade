@@ -376,7 +376,7 @@ int WINAPI wWinMain(HINSTANCE hInstance,
             
             int samplesPerSecond = 48000;
             int bytesPerSample = sizeof(int16) * 2;
-            int bufferSize = 1 * bytesPerSample * samplesPerSecond;
+            int bufferSize = 2 * bytesPerSample * samplesPerSecond;
             Win32DirectSoundInit(windowHandle, samplesPerSecond, bufferSize);
             
             globalSecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
@@ -505,22 +505,25 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                     // Fill region 1
                     for(int writeCursor = 0; 
                         writeCursor*bytesPerSample < region1Size;
-                        writeCursor += bytesPerSample)
+                        writeCursor++)
                     {
-                        *region1Cursor = ((waveT/waveHalfPeriod) % 2) > 0 ? samplePeakValue : -samplePeakValue;
+                        int16 sampleValue = ((waveT/waveHalfPeriod) & 1) > 0 ? samplePeakValue : -samplePeakValue;
+                        *region1Cursor = sampleValue;
                         ++region1Cursor;
-                        *region1Cursor = ((waveT/waveHalfPeriod) % 2) > 0 ? samplePeakValue : -samplePeakValue;
+                        *region1Cursor = sampleValue;
                         ++region1Cursor;
                         ++waveT;
                     }
                     // Fill region 2
                     for(int writeCursor = 0; 
                         writeCursor*bytesPerSample < region2Size;
-                        writeCursor += bytesPerSample)
+                        writeCursor++)
                     {
-                        *region2Cursor = ((waveT/waveHalfPeriod) % 2) > 0 ? samplePeakValue : -samplePeakValue;
+                        int16 sampleValue = ((waveT/waveHalfPeriod) & 1) > 0 ? samplePeakValue : -samplePeakValue;
+                        *region2Cursor = sampleValue;
                         ++region2Cursor;
-                        *region2Cursor = ((waveT/waveHalfPeriod) % 2) > 0 ? samplePeakValue : -samplePeakValue;
+                        *region2Cursor = sampleValue;
+                        ++region2Cursor;
                         ++waveT;
                     }
                     
