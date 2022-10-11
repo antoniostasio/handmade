@@ -4,6 +4,7 @@
 #include <math.h>
 #include <dsound.h>
 
+#define PI  3.14159265358979323846f   // pi
 #define global_variable static
 #define local_persist   static
 #define internal        static
@@ -377,11 +378,14 @@ int WINAPI wWinMain(HINSTANCE hInstance,
             int samplesPerSecond = 48000;
             int bytesPerSample = sizeof(int16) * 2;
             int bufferSize = 2 * bytesPerSample * samplesPerSecond;
+            int latency_ms = 10;
             Win32DirectSoundInit(windowHandle, samplesPerSecond, bufferSize);
             
             globalSecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
             int waveT = 0;
-            int waveHZ = 240;
+            int waveHzAtRest = 240;
+            int waveHz = waveHzAtRest;
+            
             
             MSG message;
             BOOL messageReceived;
@@ -394,7 +398,6 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                     if (messageReceived == -1)
                     {
                         // TODO
-                        break;
                     }
                     else
                     {
@@ -447,6 +450,15 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                             xOffset += (lx * 0.0001);
                             yOffset += (ly * 0.0001);
                         }
+                        constexpr float thumbNegativeMagnitude = 32768;
+                        constexpr float thumbPositiveMagnitude = 32767;
+                        float normalizeFactor = thumbPositiveMagnitude;
+                        int maxDeltaHZ = 100;
+                        if(ly < 0)
+                        {
+                            normalizeFactor = thumbNegativeMagnitude;
+                        }
+                        waveHz = waveHzAtRest + (float)(maxDeltaHZ)*(ly / normalizeFactor);
                     }
                     else
                     {
@@ -464,24 +476,28 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                 Win32CopyBufferToWindow(deviceContext, &bitmapBuffer,
                                         rectangleDimensions.width, rectangleDimensions.height);
                                         
-                // TODO: test audio
                 
+                // NOTE: testing audio
                 // Before writing in the audio buffer it's necessary to find 
                 // the locations where it can and should be written and lock those
                 DWORD playCursor;
                 DWORD safeToWriteCursor;
                 globalSecondaryBuffer->GetCurrentPosition(&playCursor, &safeToWriteCursor);
 
-                // Offset at which to start lock,  Size of lock
+                // Offset at which to start lock,  Size custom defined by latency value
                 DWORD lockStartOffset = (waveT * bytesPerSample) % bufferSize;
                 DWORD lockSize = 0;
                 // Calculating how many bytes should be locked
                 if (lockStartOffset > safeToWriteCursor)
                 {
+                    // start filling from last written position (waveT index) to the end and then wrapping up to the play cursor position.
+                    // |xxxxxxP-S--------Lxxxxxxx| P: playCursor, S: safeToWriteCursor, L: lockStartOffset
                     lockSize = bufferSize - lockStartOffset + playCursor;
                 }
                 else if (lockStartOffset < playCursor)
                 {
+                    // start filling from last written position (waveT index) up to the play cursor position.
+                    // |----LxxxxxxxxxP-S--------| P: playCursor, S: safeToWriteCursor, L: lockStartOffset
                     lockSize = playCursor - lockStartOffset;
                 }
                 
@@ -500,14 +516,15 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                     int16* region2Cursor = (int16 *)region2;
                     
                     // Write a full sample each cycle
-                    int samplePeakValue = 1000;
-                    int waveHalfPeriod = samplesPerSecond / waveHZ;
+                    int maxVolume = 1000;
+                    int wavePeriod = samplesPerSecond / waveHz;
                     // Fill region 1
                     for(int writeCursor = 0; 
                         writeCursor*bytesPerSample < region1Size;
                         writeCursor++)
                     {
-                        int16 sampleValue = ((waveT/waveHalfPeriod) & 1) > 0 ? samplePeakValue : -samplePeakValue;
+                        float t = float(2.f*PI*waveT)/wavePeriod;
+                        int16 sampleValue = (int16) (sinf(t) * maxVolume);
                         *region1Cursor = sampleValue;
                         ++region1Cursor;
                         *region1Cursor = sampleValue;
@@ -515,11 +532,10 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                         ++waveT;
                     }
                     // Fill region 2
-                    for(int writeCursor = 0; 
-                        writeCursor*bytesPerSample < region2Size;
-                        writeCursor++)
+                    for(int writeCursor = 0; writeCursor*bytesPerSample < region2Size; writeCursor++)
                     {
-                        int16 sampleValue = ((waveT/waveHalfPeriod) & 1) > 0 ? samplePeakValue : -samplePeakValue;
+                        float t = float(2*PI*waveT)/wavePeriod;
+                        int16 sampleValue = (int16) (sinf(t) * maxVolume);
                         *region2Cursor = sampleValue;
                         ++region2Cursor;
                         *region2Cursor = sampleValue;
@@ -533,6 +549,7 @@ int WINAPI wWinMain(HINSTANCE hInstance,
             }
             
         }
+        // no window handle
         else return(0);
     }
     else;
