@@ -1,8 +1,8 @@
 #include <windows.h>
 #include <cstdint>
 #include <xinput.h>
-#include <math.h>
 #include <dsound.h>
+
 
 #define PI  3.14159265358979323846f   // pi
 #define global_variable static
@@ -20,20 +20,13 @@ typedef int64_t     int64;
 
 typedef uint32 bool32;
 
-typedef struct
-{
-    BITMAPINFO bitmapInfo;
-    void *memory;
-    int width;
-    int height;
-    int bitPerPixel;
-} bitmap_buffer;
-
 typedef struct 
 {
     int width;
     int height;
 } dimensions;
+
+#include "handmade.cpp"
 
 // Function header macros
 #define XINPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex,XINPUT_STATE *pState)
@@ -64,6 +57,7 @@ global_variable xinput_set_state *XInputSetState_ = XInputSetStateStub;
 
 // Global variables
 global_variable bitmap_buffer bitmapBuffer;
+global_variable BITMAPINFO bitmapInfo;
 global_variable LPDIRECTSOUNDBUFFER globalSecondaryBuffer = 0;
 global_variable bool globalRunning;
 global_variable int xOffset = 0;
@@ -82,7 +76,7 @@ internal dimensions getRectangleDimensionsFrom(HWND windowHandle)
             return(rectDim);
 }
 
-
+/**
 internal void drawGradientInto(bitmap_buffer *buffer, int xPhase, int yPhase)
 {
     int pitch = buffer->bitPerPixel*buffer->width;
@@ -99,7 +93,7 @@ internal void drawGradientInto(bitmap_buffer *buffer, int xPhase, int yPhase)
         row += pitch;
     }
 }
-
+**/
 
 internal void Win32ResizeDIBSection(bitmap_buffer *buffer, int width, int height)
 {
@@ -109,12 +103,12 @@ internal void Win32ResizeDIBSection(bitmap_buffer *buffer, int width, int height
         VirtualFree(buffer->memory, 0, MEM_RELEASE);
     }
     
-    buffer->bitmapInfo.bmiHeader.biSize = sizeof(buffer->bitmapInfo.bmiHeader);
-    buffer->bitmapInfo.bmiHeader.biWidth = width;
-    buffer->bitmapInfo.bmiHeader.biHeight = -height;
-    buffer->bitmapInfo.bmiHeader.biPlanes = 1;
-    buffer->bitmapInfo.bmiHeader.biBitCount = 32;
-    buffer->bitmapInfo.bmiHeader.biCompression = BI_RGB;
+    bitmapInfo.bmiHeader.biSize = sizeof(bitmapInfo.bmiHeader);
+    bitmapInfo.bmiHeader.biWidth = width;
+    bitmapInfo.bmiHeader.biHeight = -height;
+    bitmapInfo.bmiHeader.biPlanes = 1;
+    bitmapInfo.bmiHeader.biBitCount = 32;
+    bitmapInfo.bmiHeader.biCompression = BI_RGB;
     
     buffer->width = width;
     buffer->height = height;
@@ -134,7 +128,7 @@ internal void Win32CopyBufferToWindow(HDC deviceContext, bitmap_buffer *buffer,
                   0, 0, windowWidth, windowHeight,
                   0, 0, buffer->width, buffer->height,
                   buffer->memory,
-                  &buffer->bitmapInfo,
+                  &bitmapInfo,
                   DIB_RGB_COLORS, SRCCOPY);
 
 }
@@ -375,16 +369,22 @@ int WINAPI wWinMain(HINSTANCE hInstance,
         {
             LoadXInputLibrary();
             
-            int samplesPerSecond = 48000;
-            int bytesPerSample = sizeof(int16) * 2;
-            int bufferSize = 2 * bytesPerSample * samplesPerSecond;
-            int latency_ms = 10;
-            Win32DirectSoundInit(windowHandle, samplesPerSecond, bufferSize);
+            sound_buffer soundBuffer;
+            soundBuffer.samplesPerSecond = 48000;
+            soundBuffer.bytesPerSample = sizeof(int16) * 2;
+            soundBuffer.waveT = 0;
+            soundBuffer.currentSampleIndex = 0;
+            soundBuffer.waveHz = 240;
+            
+            int latency_sampleCount = soundBuffer.samplesPerSecond/60;
+            soundBuffer.bufferSize = latency_sampleCount;
+            soundBuffer.buffer = VirtualAlloc(0, soundBuffer.bufferSize, MEM_COMMIT, PAGE_READWRITE);
+            
+            int DSbufferSize = 2 * soundBuffer.bytesPerSample * soundBuffer.samplesPerSecond;
+            
+            Win32DirectSoundInit(windowHandle, soundBuffer.samplesPerSecond, DSbufferSize);
             
             globalSecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
-            int waveT = 0;
-            int waveHzAtRest = 240;
-            int waveHz = waveHzAtRest;
             
             
             MSG message;
@@ -452,13 +452,14 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                         }
                         constexpr float thumbNegativeMagnitude = 32768;
                         constexpr float thumbPositiveMagnitude = 32767;
-                        float normalizeFactor = thumbPositiveMagnitude;
+                        float maxThumbMagnitude = thumbPositiveMagnitude;
                         int maxDeltaHZ = 100;
                         if(ly < 0)
                         {
-                            normalizeFactor = thumbNegativeMagnitude;
+                            maxThumbMagnitude = thumbNegativeMagnitude;
                         }
-                        waveHz = waveHzAtRest + (float)(maxDeltaHZ)*(ly / normalizeFactor);
+                        int waveHzAtRest = 240;
+                        soundBuffer.waveHz = waveHzAtRest + (float)(maxDeltaHZ)*(ly / maxThumbMagnitude);
                     }
                     else
                     {
@@ -468,14 +469,7 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                 xOffset += xSpeed;
                 yOffset += ySpeed;
                 
-                drawGradientInto(&bitmapBuffer, xOffset, yOffset);
-                
-                HDC deviceContext = GetDC(windowHandle);
-                
-                dimensions rectangleDimensions = getRectangleDimensionsFrom(windowHandle);     
-                Win32CopyBufferToWindow(deviceContext, &bitmapBuffer,
-                                        rectangleDimensions.width, rectangleDimensions.height);
-                                        
+                updateGame(&soundBuffer, latency_sampleCount, &bitmapBuffer, xOffset, yOffset);
                 
                 // NOTE: testing audio
                 // Before writing in the audio buffer it's necessary to find 
@@ -483,23 +477,12 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                 DWORD playCursor;
                 DWORD safeToWriteCursor;
                 globalSecondaryBuffer->GetCurrentPosition(&playCursor, &safeToWriteCursor);
-
                 // Offset at which to start lock,  Size custom defined by latency value
-                DWORD lockStartOffset = (waveT * bytesPerSample) % bufferSize;
-                DWORD lockSize = 0;
-                // Calculating how many bytes should be locked
-                if (lockStartOffset > safeToWriteCursor)
-                {
-                    // start filling from last written position (waveT index) to the end and then wrapping up to the play cursor position.
-                    // |xxxxxxP-S--------Lxxxxxxx| P: playCursor, S: safeToWriteCursor, L: lockStartOffset
-                    lockSize = bufferSize - lockStartOffset + playCursor;
-                }
-                else if (lockStartOffset < playCursor)
-                {
-                    // start filling from last written position (waveT index) up to the play cursor position.
-                    // |----LxxxxxxxxxP-S--------| P: playCursor, S: safeToWriteCursor, L: lockStartOffset
-                    lockSize = playCursor - lockStartOffset;
-                }
+                // TODO: change lock start to playcursor + latency (also need to find waveT at lockStart)
+                
+                DWORD lockStartOffset = (soundBuffer.currentSampleIndex * soundBuffer.bytesPerSample) % DSbufferSize;
+                DWORD lockSize = (latency_sampleCount) * (soundBuffer.bytesPerSample);
+                
                 
                 // Address and size of first part of lock.
                 LPVOID region1 = 0;
@@ -507,44 +490,38 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                 // Address and size of wraparound. 
                 LPVOID region2 = 0;
                 DWORD region2Size = 0;
-                if (DS_OK == globalSecondaryBuffer->Lock(lockStartOffset, lockSize,     
+                HRESULT lockResult = globalSecondaryBuffer->Lock(lockStartOffset, lockSize,     
                                                          &region1, &region1Size,  
                                                          &region2, &region2Size,  
-                                                         0))  // Flag.
-                {
-                    int16* region1Cursor = (int16 *)region1;
-                    int16* region2Cursor = (int16 *)region2;
-                    
-                    // Write a full sample each cycle
-                    int maxVolume = 1000;
-                    int wavePeriod = samplesPerSecond / waveHz;
-                    // Fill region 1
-                    for(int writeCursor = 0; 
-                        writeCursor*bytesPerSample < region1Size;
-                        writeCursor++)
+                                                         0 /** :Flag **/);
+                if (DS_OK == lockResult)
+                {   
+                    // Copying generated sound inside direct-sound buffer
+                    uint8* bufferCursor = (uint8*)soundBuffer.buffer;
+                    uint8* regionCursor = (uint8*)region1;
+                    for(int byteNum = 0; byteNum < region1Size; ++byteNum)
                     {
-                        float t = float(2.f*PI*waveT)/wavePeriod;
-                        int16 sampleValue = (int16) (sinf(t) * maxVolume);
-                        *region1Cursor = sampleValue;
-                        ++region1Cursor;
-                        *region1Cursor = sampleValue;
-                        ++region1Cursor;
-                        ++waveT;
+                        *regionCursor = *bufferCursor;
+                        ++regionCursor;
+                        ++bufferCursor;
                     }
-                    // Fill region 2
-                    for(int writeCursor = 0; writeCursor*bytesPerSample < region2Size; writeCursor++)
+                    regionCursor = (uint8*)region2;
+                    for(int byteNum = 0; byteNum < region2Size; ++byteNum)
                     {
-                        float t = float(2*PI*waveT)/wavePeriod;
-                        int16 sampleValue = (int16) (sinf(t) * maxVolume);
-                        *region2Cursor = sampleValue;
-                        ++region2Cursor;
-                        *region2Cursor = sampleValue;
-                        ++region2Cursor;
-                        ++waveT;
+                        *regionCursor = *bufferCursor;
+                        ++regionCursor;
+                        ++bufferCursor;
                     }
                     
                     globalSecondaryBuffer->Unlock(region1, region1Size, region2, region2Size);
                 }
+                
+                HDC deviceContext = GetDC(windowHandle);
+                
+                dimensions rectangleDimensions = getRectangleDimensionsFrom(windowHandle);     
+                Win32CopyBufferToWindow(deviceContext, &bitmapBuffer,
+                                        rectangleDimensions.width, rectangleDimensions.height);
+                                        
                 ReleaseDC(windowHandle, deviceContext);
             }
             
