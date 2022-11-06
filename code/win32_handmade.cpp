@@ -376,16 +376,16 @@ int WINAPI wWinMain(HINSTANCE hInstance,
             soundBuffer.currentSampleIndex = 0;
             soundBuffer.waveHz = 240;
             
-            int latency_sampleCount = soundBuffer.samplesPerSecond/60;
-            soundBuffer.bufferSize = latency_sampleCount;
-            soundBuffer.buffer = VirtualAlloc(0, soundBuffer.bufferSize, MEM_COMMIT, PAGE_READWRITE);
+            int latency_sampleCount =(soundBuffer.samplesPerSecond/1000)*60;
+            soundBuffer.bufferSize = latency_sampleCount*soundBuffer.bytesPerSample;
+            soundBuffer.buffer = VirtualAlloc(0, soundBuffer.bufferSize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
             
             int DSbufferSize = 2 * soundBuffer.bytesPerSample * soundBuffer.samplesPerSecond;
             
             Win32DirectSoundInit(windowHandle, soundBuffer.samplesPerSecond, DSbufferSize);
             
             globalSecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
-            
+            DWORD previousPlayCursor = 0;
             
             MSG message;
             BOOL messageReceived;
@@ -469,51 +469,71 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                 xOffset += xSpeed;
                 yOffset += ySpeed;
                 
-                updateGame(&soundBuffer, latency_sampleCount, &bitmapBuffer, xOffset, yOffset);
                 
                 // NOTE: testing audio
                 // Before writing in the audio buffer it's necessary to find 
                 // the locations where it can and should be written and lock those
-                DWORD playCursor;
+                DWORD currentPlayCursor;
                 DWORD safeToWriteCursor;
-                globalSecondaryBuffer->GetCurrentPosition(&playCursor, &safeToWriteCursor);
+                globalSecondaryBuffer->GetCurrentPosition(&currentPlayCursor, &safeToWriteCursor);
                 // Offset at which to start lock,  Size custom defined by latency value
                 // TODO: change lock start to playcursor + latency (also need to find waveT at lockStart)
+
+                // when currentPlayCursor is close to the end of the buffer or has just wrapped, the desired write position
+                // can be smaller than the last written position if this didn't wrap in the previous cycle
+                DWORD samplesPlayed = 0;
+                if (currentPlayCursor >= previousPlayCursor)
+                    samplesPlayed = (currentPlayCursor-previousPlayCursor)/soundBuffer.bytesPerSample;
+                else
+                    samplesPlayed = ((DSbufferSize - previousPlayCursor) + currentPlayCursor)/soundBuffer.bytesPerSample;
+                    
+                previousPlayCursor = currentPlayCursor;
                 
-                DWORD lockStartOffset = (soundBuffer.currentSampleIndex * soundBuffer.bytesPerSample) % DSbufferSize;
-                DWORD lockSize = (latency_sampleCount) * (soundBuffer.bytesPerSample);
                 
+                DWORD lockSampleCount = 0;
+                if(samplesPlayed < latency_sampleCount)
+                    lockSampleCount = samplesPlayed;
+                else
+                    lockSampleCount = latency_sampleCount;
+
+                updateGame(&soundBuffer, lockSampleCount, &bitmapBuffer, xOffset, yOffset);
                 
-                // Address and size of first part of lock.
-                LPVOID region1 = 0;
-                DWORD region1Size = 0;
-                // Address and size of wraparound. 
-                LPVOID region2 = 0;
-                DWORD region2Size = 0;
-                HRESULT lockResult = globalSecondaryBuffer->Lock(lockStartOffset, lockSize,     
-                                                         &region1, &region1Size,  
-                                                         &region2, &region2Size,  
+                // Copying game generated sound inside platform buffer.
+                // Note: circular buffer can have locked portion split in two parts because of wrapping.
+                DWORD  desiredWritePosition = (currentPlayCursor + latency_sampleCount*soundBuffer.bytesPerSample) % DSbufferSize;
+                DWORD  lockSize = lockSampleCount * soundBuffer.bytesPerSample;
+                LPVOID region1Location = 0;
+                DWORD  region1ByteSize = 0;
+                LPVOID region2Location = 0;
+                DWORD  region2ByteSize = 0;
+                HRESULT lockResult = globalSecondaryBuffer->Lock(desiredWritePosition, lockSize,     
+                                                         &region1Location, &region1ByteSize,  
+                                                         &region2Location, &region2ByteSize,  
                                                          0 /** :Flag **/);
                 if (DS_OK == lockResult)
                 {   
-                    // Copying generated sound inside direct-sound buffer
-                    uint8* bufferCursor = (uint8*)soundBuffer.buffer;
-                    uint8* regionCursor = (uint8*)region1;
-                    for(int byteNum = 0; byteNum < region1Size; ++byteNum)
+                    int16* sourceBufferCursor      = (int16*)soundBuffer.buffer;
+                    int16* destinationBufferCursor = (int16*)region1Location;
+                    for(int sampleNum = 0; sampleNum < region1ByteSize/soundBuffer.bytesPerSample; ++sampleNum)
                     {
-                        *regionCursor = *bufferCursor;
-                        ++regionCursor;
-                        ++bufferCursor;
+                        *destinationBufferCursor = *sourceBufferCursor;
+                        ++destinationBufferCursor;
+                        ++sourceBufferCursor;
+                        *destinationBufferCursor = *sourceBufferCursor;
+                        ++destinationBufferCursor;
+                        ++sourceBufferCursor;
                     }
-                    regionCursor = (uint8*)region2;
-                    for(int byteNum = 0; byteNum < region2Size; ++byteNum)
+                    destinationBufferCursor = (int16*)region2Location;
+                    for(int sampleNum = 0; sampleNum < region2ByteSize/soundBuffer.bytesPerSample; ++sampleNum)
                     {
-                        *regionCursor = *bufferCursor;
-                        ++regionCursor;
-                        ++bufferCursor;
+                        *destinationBufferCursor = *sourceBufferCursor;
+                        ++destinationBufferCursor;
+                        ++sourceBufferCursor;
+                        *destinationBufferCursor = *sourceBufferCursor;
+                        ++destinationBufferCursor;
+                        ++sourceBufferCursor;
                     }
-                    
-                    globalSecondaryBuffer->Unlock(region1, region1Size, region2, region2Size);
+                    globalSecondaryBuffer->Unlock(region1Location, region1ByteSize, region2Location, region2ByteSize);
                 }
                 
                 HDC deviceContext = GetDC(windowHandle);

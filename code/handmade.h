@@ -4,6 +4,7 @@
 #define local_persist   static
 #define internal        static
 
+#define assert(expression) if(!(expression)) {*(int*)0 = 0;}
 
 typedef struct
 {

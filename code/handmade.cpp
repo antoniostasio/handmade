@@ -35,15 +35,15 @@ internal void drawGradientInto(bitmap_buffer *buffer, int xPhase, int yPhase)
     }
 }
 
-internal void updateSound(sound_buffer* soundBuffer, int sampleCount)
+internal void updateSound(sound_buffer* soundBuffer, int samplesToGenerate)
 {
+    assert(soundBuffer->bufferSize >= samplesToGenerate * soundBuffer->bytesPerSample);
     int16* bufferCursor = (int16 *)(soundBuffer->buffer);
     
-    // Write a full sample
+    // Writing n samples for each of th 2 channels
     int maxVolume = 1000;
     int wavePeriodSampleCount = soundBuffer->samplesPerSecond / (soundBuffer->waveHz);
-    // Fill region 1
-    for(int writeSampleCursor = 0; writeSampleCursor* (soundBuffer->bytesPerSample) < sampleCount; writeSampleCursor++)
+    for(int writeSampleCursor = 0; writeSampleCursor < samplesToGenerate; writeSampleCursor++)
     {
         // subdivide a full cicle (2*PI) in n chunks (number of samples in a period)
         // so we get a slice (in time) of the wave
