@@ -11,8 +11,21 @@ typedef int16_t     int16;
 typedef int32_t     int32;
 typedef int64_t     int64;
 
-internal void updateGame(sound_buffer* soundBuffer, int soundSampleCount, bitmap_buffer* mainBuffer, int xOffset, int yOffset)
+internal void updateGame(sound_buffer* soundBuffer, int soundSampleCount,
+                         input_state* gameInput,
+                         bitmap_buffer* mainBuffer, int xOffset, int yOffset)
 {
+    constexpr float thumbNegativeMagnitude = 32768;
+    constexpr float thumbPositiveMagnitude = 32767;
+    float maxThumbMagnitude = thumbPositiveMagnitude;
+    int maxDeltaHZ = 100;
+    if(gameInput->leftStick.y < 0)
+    {
+        maxThumbMagnitude = thumbNegativeMagnitude;
+    }
+    int waveHzAtRest = 240;
+    soundBuffer->waveHz = waveHzAtRest + (float)(maxDeltaHZ)*(gameInput->leftStick.y / maxThumbMagnitude);
+    
     updateSound(soundBuffer, soundSampleCount);
     
     drawGradientInto(mainBuffer, xOffset, yOffset);

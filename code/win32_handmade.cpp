@@ -58,6 +58,7 @@ global_variable xinput_set_state *XInputSetState_ = XInputSetStateStub;
 // Global variables
 global_variable bitmap_buffer bitmapBuffer;
 global_variable BITMAPINFO bitmapInfo;
+global_variable input_state gameInput{};
 global_variable LPDIRECTSOUNDBUFFER globalSecondaryBuffer = 0;
 global_variable bool globalRunning;
 global_variable int xOffset = 0;
@@ -241,63 +242,71 @@ LRESULT CALLBACK MainWindowCallback(HWND   windowHandle,
                 if (VKCode == 'W')
                 {
                     if(keyDown)
+                    {
+                        gameInput.upButton = button_state::PRESSED;
                         ySpeed -= 2;
+                    } 
                     else
+                    {
+                        gameInput.upButton = button_state::RELEASED;
                         ySpeed += 2;
+                    }
                 }
                 else if (VKCode == 'A')
                 {
                     if(keyDown)
+                    {
+                        gameInput.leftButton = button_state::PRESSED;
                         xSpeed -= 2;
+                    }
                     else
+                    {
+                        gameInput.leftButton = button_state::RELEASED;
                         xSpeed += 2;
+                    }
                 }
                 else if (VKCode == 'S')
                 {
                     if(keyDown)
+                    {
+                        gameInput.downButton = button_state::PRESSED;
                         ySpeed += 2;
+                    }
                     else
+                    {
+                        gameInput.downButton = button_state::RELEASED;
                         ySpeed -= 2;
+                    }
                 }
                 else if (VKCode == 'D')
                 {
                     if(keyDown)
+                    {
+                        gameInput.rightButton = button_state::PRESSED;
                         xSpeed += 2;
+                    }
                     else
+                    {
+                        gameInput.rightButton = button_state::RELEASED;
                         xSpeed -= 2;
+                    }
                 }
                 else if (VKCode == 'Q')
-                {
-                    
-                }
+                {}
                 else if (VKCode == 'E')
-                {
-                    
-                }
+                {}
                 else if (VKCode == VK_UP)
-                {
-                    
-                }
+                {}
                 else if (VKCode == VK_DOWN)
-                {
-                    
-                }
+                {}
                 else if (VKCode == VK_LEFT)
-                {
-                    
-                }
+                {}
                 else if (VKCode == VK_RIGHT)
-                {
-                    
-                }
+                {}
                 else if (VKCode == VK_ESCAPE)
-                {
-                    
-                }
+                {}
                 else if (VKCode == VK_SPACE)
-                {
-                    
-                }
+                {}
                 else if (VKCode == VK_F4)
                 {
                     bool32 altKeyPressed = (VKCode & (1<<29));
@@ -307,8 +316,7 @@ LRESULT CALLBACK MainWindowCallback(HWND   windowHandle,
                     }
                 }
                 else if (VKCode == VK_CONTROL)
-                {
-                }
+                {}
             }
             
         } break;
@@ -367,6 +375,7 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                                             0);
         if (windowHandle)
         {
+            input_state gamepadInput{};
             LoadXInputLibrary();
             
             sound_buffer soundBuffer;
@@ -447,19 +456,11 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                         
                         if (magnitude > XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE)
                         {
+                            gameInput.leftStick.x = lx;
+                            gameInput.leftStick.y = ly;
                             xOffset += (lx * 0.0001);
                             yOffset += (ly * 0.0001);
                         }
-                        constexpr float thumbNegativeMagnitude = 32768;
-                        constexpr float thumbPositiveMagnitude = 32767;
-                        float maxThumbMagnitude = thumbPositiveMagnitude;
-                        int maxDeltaHZ = 100;
-                        if(ly < 0)
-                        {
-                            maxThumbMagnitude = thumbNegativeMagnitude;
-                        }
-                        int waveHzAtRest = 240;
-                        soundBuffer.waveHz = waveHzAtRest + (float)(maxDeltaHZ)*(ly / maxThumbMagnitude);
                     }
                     else
                     {
@@ -496,7 +497,7 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                 else
                     lockSampleCount = latency_sampleCount;
 
-                updateGame(&soundBuffer, lockSampleCount, &bitmapBuffer, xOffset, yOffset);
+                updateGame(&soundBuffer, lockSampleCount, &gameInput, &bitmapBuffer, xOffset, yOffset);
                 
                 // Copying game generated sound inside platform buffer.
                 // Note: circular buffer can have locked portion split in two parts because of wrapping.
