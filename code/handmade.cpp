@@ -11,20 +11,59 @@ typedef int16_t     int16;
 typedef int32_t     int32;
 typedef int64_t     int64;
 
+
+global_variable int xOffset = 0;
+global_variable int yOffset = 0;
+
 internal void updateGame(sound_buffer* soundBuffer, int soundSampleCount,
                          input_state* gameInput,
-                         bitmap_buffer* mainBuffer, int xOffset, int yOffset)
+                         bitmap_buffer* mainBuffer)
 {
-    constexpr float thumbNegativeMagnitude = 32768;
-    constexpr float thumbPositiveMagnitude = 32767;
-    float maxThumbMagnitude = thumbPositiveMagnitude;
-    int maxDeltaHZ = 100;
-    if(gameInput->leftStick.y < 0)
+    float maxSpeed = 4;
+    xOffset -= (gameInput->leftStick.x * maxSpeed);
+    yOffset += (gameInput->leftStick.y * maxSpeed);
+    
+    vec2i speed = {};
+    if(gameInput->upButton == button_state::PRESSED)
     {
-        maxThumbMagnitude = thumbNegativeMagnitude;
+        speed.y += 2;
     }
+    else
+    {
+        speed.y -= 2;
+    }
+    if(gameInput->downButton == button_state::PRESSED)
+    {
+        speed.y += -2;
+    }
+    else
+    {
+        speed.y -= -2;
+    }
+    if(gameInput->rightButton == button_state::PRESSED)
+    {
+        speed.x -= 2;
+    }
+    else
+    {
+        speed.x += 2;
+    }
+    if(gameInput->leftButton == button_state::PRESSED)
+    {
+        speed.x -= -2;
+    }
+    else
+    {
+        speed.x += -2;
+    }
+    
+    xOffset += speed.x;
+    yOffset += speed.y;
+    
+
+    int maxDeltaHZ = 100;
     int waveHzAtRest = 240;
-    soundBuffer->waveHz = waveHzAtRest + (float)(maxDeltaHZ)*(gameInput->leftStick.y / maxThumbMagnitude);
+    soundBuffer->waveHz = waveHzAtRest + (float)(maxDeltaHZ)*(gameInput->leftStick.y);
     
     updateSound(soundBuffer, soundSampleCount);
     

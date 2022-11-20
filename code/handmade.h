@@ -30,9 +30,13 @@ typedef struct
 
 enum button_state
 {
-    PRESSED,
-    RELEASED
+    RELEASED,
+    PRESSED
 };
+
+#define vec2(type) struct {type x; type y;}
+
+typedef vec2(int) vec2i;
 
 typedef struct
 {
@@ -77,6 +81,6 @@ internal void drawGradientInto(bitmap_buffer *buffer, int xPhase, int yPhase);
 
 internal void updateGame(sound_buffer* soundBuffer, int soundSampleCount, 
                          input_state* gameInput,
-                         bitmap_buffer* mainBuffer, int xOffset, int yOffset);
+                         bitmap_buffer* mainBuffer);
 
 internal void updateSound(sound_buffer* soundInfo, int sampleCount);
