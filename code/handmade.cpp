@@ -12,13 +12,14 @@ typedef int32_t     int32;
 typedef int64_t     int64;
 
 
-global_variable int xOffset = 0;
-global_variable int yOffset = 0;
 
 internal void updateGame(sound_buffer* soundBuffer, int soundSampleCount,
                          input_state* gameInput,
                          bitmap_buffer* mainBuffer)
 {
+    local_persist int yOffset = 0;
+    local_persist int xOffset = 0;
+
     float maxSpeed = 4;
     xOffset -= (gameInput->leftStick.x * maxSpeed);
     yOffset += (gameInput->leftStick.y * maxSpeed);
@@ -28,33 +29,17 @@ internal void updateGame(sound_buffer* soundBuffer, int soundSampleCount,
     {
         speed.y += 2;
     }
-    else
-    {
-        speed.y -= 2;
-    }
     if(gameInput->downButton == button_state::PRESSED)
     {
         speed.y += -2;
     }
-    else
-    {
-        speed.y -= -2;
-    }
     if(gameInput->rightButton == button_state::PRESSED)
     {
-        speed.x -= 2;
-    }
-    else
-    {
-        speed.x += 2;
+        speed.x += -2;
     }
     if(gameInput->leftButton == button_state::PRESSED)
     {
-        speed.x -= -2;
-    }
-    else
-    {
-        speed.x += -2;
+        speed.x += 2;
     }
     
     xOffset += speed.x;
