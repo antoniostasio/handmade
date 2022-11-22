@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <cstdint>
+#include <cstdio>
 #include <xinput.h>
 #include <dsound.h>
 
@@ -385,11 +386,17 @@ int WINAPI wWinMain(HINSTANCE hInstance,
             DWORD previousPlayCursor = 0;
             
             MSG message;
-            BOOL messageReceived;
+            BOOL messageReceived = 0;
             globalRunning = true;
+            
+            LARGE_INTEGER performanceFrequency = {};
+            QueryPerformanceFrequency(&performanceFrequency);
 
             while (globalRunning)
             {
+                LARGE_INTEGER performanceCountStart = {};
+                QueryPerformanceCounter(&performanceCountStart);
+
                 while(messageReceived = PeekMessageA(&message, 0, 0, 0, PM_REMOVE))
                     {
                     if (messageReceived == -1)
@@ -565,6 +572,14 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                                         rectangleDimensions.width, rectangleDimensions.height);
                                         
                 ReleaseDC(windowHandle, deviceContext);
+                
+                LARGE_INTEGER performanceCountEnd = {};
+                QueryPerformanceCounter(&performanceCountEnd);
+                
+                double elapsedTime_ms = (performanceCountEnd.QuadPart - performanceCountStart.QuadPart) / (double)performanceFrequency.QuadPart * 1000.0;
+                char elapsedTimeMessage[50];
+                sprintf(elapsedTimeMessage, "Elapsed time: %3.2f \n", elapsedTime_ms);
+                OutputDebugStringA(elapsedTimeMessage);
             }
             
         }
