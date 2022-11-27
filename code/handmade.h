@@ -8,24 +8,29 @@
 
 typedef struct
 {
-    void *memory;
-    int width;
-    int height;
-    int bitPerPixel;
+    void*  transientStorage;
+    uint64 transientStorageSize;
+    void*  permanentStorage;
+    uint64 permanentStorageSize;
+} game_memory;
+
+typedef struct
+{
+    void* memory;
+    int   width;
+    int   height;
+    int   bitPerPixel;
 } bitmap_buffer;
 
 typedef struct 
 {
-    void *buffer;
-    int bufferSize;
-    int samplesPerSecond;
-    int bytesPerSample;
-    // int bufferSize;
-    // int latency_ms;
+    void* buffer;
+    int   bufferSize;
+    int   samplesPerSecond;
+    int   bytesPerSample;
     float waveT;
-    int currentSampleIndex;
-    // int waveHzAtRest;
-    int waveHz;
+    int   currentSampleIndex;
+    int   waveHz;
 } sound_buffer;
 
 enum button_state
@@ -49,7 +54,6 @@ typedef struct
     double x;
     double y;
 } vec2d;
-
 
 typedef struct
 {

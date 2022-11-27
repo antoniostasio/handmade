@@ -12,7 +12,6 @@ typedef int32_t     int32;
 typedef int64_t     int64;
 
 
-
 internal void updateGame(sound_buffer* soundBuffer, int soundSampleCount,
                          input_state* gameInput,
                          bitmap_buffer* mainBuffer)

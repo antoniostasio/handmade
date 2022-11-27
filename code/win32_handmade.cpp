@@ -57,9 +57,9 @@ global_variable xinput_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 
 // Global variables
+global_variable game_memory gameMemory;
 global_variable bitmap_buffer bitmapBuffer;
 global_variable BITMAPINFO bitmapInfo;
-global_variable input_state gameInput{};
 global_variable LPDIRECTSOUNDBUFFER globalSecondaryBuffer = 0;
 global_variable bool globalRunning;
 
@@ -229,87 +229,6 @@ LRESULT CALLBACK MainWindowCallback(HWND   windowHandle,
         
         //case WM_SYSKEYDOWN:
         //case WM_SYSKEYUP:
-        case WM_KEYDOWN:
-        case WM_KEYUP:
-        {
-            uint32 VKCode = wParam;
-            bool keyWasDown = (lParam & (1 << 30)) != 0;
-            bool keyDown = (lParam & (1 << 31)) == 0;
-            if(keyDown != keyWasDown)
-            {
-                if (VKCode == 'W')
-                {
-                    if(keyDown)
-                    {
-                        gameInput.upButton = button_state::PRESSED;
-                    } 
-                    else
-                    {
-                        gameInput.upButton = button_state::RELEASED;
-                    }
-                }
-                else if (VKCode == 'A')
-                {
-                    if(keyDown)
-                    {
-                        gameInput.leftButton = button_state::PRESSED;
-                    }
-                    else
-                    {
-                        gameInput.leftButton = button_state::RELEASED;
-                    }
-                }
-                else if (VKCode == 'S')
-                {
-                    if(keyDown)
-                    {
-                        gameInput.downButton = button_state::PRESSED;
-                    }
-                    else
-                    {
-                        gameInput.downButton = button_state::RELEASED;
-                    }
-                }
-                else if (VKCode == 'D')
-                {
-                    if(keyDown)
-                    {
-                        gameInput.rightButton = button_state::PRESSED;
-                    }
-                    else
-                    {
-                        gameInput.rightButton = button_state::RELEASED;
-                    }
-                }
-                else if (VKCode == 'Q')
-                {}
-                else if (VKCode == 'E')
-                {}
-                else if (VKCode == VK_UP)
-                {}
-                else if (VKCode == VK_DOWN)
-                {}
-                else if (VKCode == VK_LEFT)
-                {}
-                else if (VKCode == VK_RIGHT)
-                {}
-                else if (VKCode == VK_ESCAPE)
-                {}
-                else if (VKCode == VK_SPACE)
-                {}
-                else if (VKCode == VK_F4)
-                {
-                    bool32 altKeyPressed = (VKCode & (1<<29));
-                    if (altKeyPressed)
-                    {
-                        globalRunning = false;
-                    }
-                }
-                else if (VKCode == VK_CONTROL)
-                {}
-            }
-            
-        } break;
         
         case WM_PAINT:
         {
@@ -366,6 +285,7 @@ int WINAPI wWinMain(HINSTANCE hInstance,
         if (windowHandle)
         {
             LoadXInputLibrary();
+            input_state gameInput{};
             
             sound_buffer soundBuffer;
             soundBuffer.samplesPerSecond = 48000;
@@ -391,12 +311,13 @@ int WINAPI wWinMain(HINSTANCE hInstance,
             
             LARGE_INTEGER performanceFrequency = {};
             QueryPerformanceFrequency(&performanceFrequency);
+            LARGE_INTEGER performanceCountPast = {};
+            LARGE_INTEGER performanceCountCurrent = {};
+            
+            QueryPerformanceCounter(&performanceCountPast);
 
             while (globalRunning)
             {
-                LARGE_INTEGER performanceCountStart = {};
-                QueryPerformanceCounter(&performanceCountStart);
-
                 while(messageReceived = PeekMessageA(&message, 0, 0, 0, PM_REMOVE))
                     {
                     if (messageReceived == -1)
@@ -405,10 +326,93 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                     }
                     else
                     {
-                        if(message.message == WM_QUIT)
+                        switch(message.message)
                         {
-                            globalRunning = false;
+                            case WM_QUIT:
+                                globalRunning = false;
+                                break;
+                            case WM_KEYDOWN:
+                            case WM_KEYUP:
+                            {
+                                uint32 VKCode = message.wParam;
+                                bool keyWasDown = (message.lParam & (1 << 30)) != 0;
+                                bool keyDown = (message.lParam & (1 << 31)) == 0;
+                                if(keyDown != keyWasDown)
+                                {
+                                    if (VKCode == 'W')
+                                    {
+                                        if(keyDown) {
+                                            gameInput.upButton = button_state::PRESSED;
+                                        } 
+                                        else
+                                        {
+                                            gameInput.upButton = button_state::RELEASED;
+                                        }
+                                    }
+                                    else if (VKCode == 'A')
+                                    {
+                                        if(keyDown)
+                                        {
+                                            gameInput.leftButton = button_state::PRESSED;
+                                        }
+                                        else
+                                        {
+                                            gameInput.leftButton = button_state::RELEASED;
+                                        }
+                                    }
+                                    else if (VKCode == 'S')
+                                    {
+                                        if(keyDown)
+                                        {
+                                            gameInput.downButton = button_state::PRESSED;
+                                        }
+                                        else
+                                        {
+                                            gameInput.downButton = button_state::RELEASED;
+                                        }
+                                    }
+                                    else if (VKCode == 'D')
+                                    {
+                                        if(keyDown)
+                                        {
+                                            gameInput.rightButton = button_state::PRESSED;
+                                        }
+                                        else
+                                        {
+                                            gameInput.rightButton = button_state::RELEASED;
+                                        }
+                                    }
+                                    else if (VKCode == 'Q')
+                                    {}
+                                    else if (VKCode == 'E')
+                                    {}
+                                    else if (VKCode == VK_UP)
+                                    {}
+                                    else if (VKCode == VK_DOWN)
+                                    {}
+                                    else if (VKCode == VK_LEFT)
+                                    {}
+                                    else if (VKCode == VK_RIGHT)
+                                    {}
+                                    else if (VKCode == VK_ESCAPE)
+                                    {}
+                                    else if (VKCode == VK_SPACE)
+                                    {}
+                                    else if (VKCode == VK_F4)
+                                    {
+                                        bool32 altKeyPressed = (VKCode & (1<<29));
+                                        if (altKeyPressed)
+                                        {
+                                            globalRunning = false;
+                                        }
+                                    }
+                                    else if (VKCode == VK_CONTROL)
+                                    {}
+                                }
+                                
+                            } break;
                         }
+                        
                         TranslateMessage(&message);
                         DispatchMessage(&message);
                     }
@@ -573,13 +577,15 @@ int WINAPI wWinMain(HINSTANCE hInstance,
                                         
                 ReleaseDC(windowHandle, deviceContext);
                 
-                LARGE_INTEGER performanceCountEnd = {};
-                QueryPerformanceCounter(&performanceCountEnd);
-                
-                double elapsedTime_ms = (performanceCountEnd.QuadPart - performanceCountStart.QuadPart) / (double)performanceFrequency.QuadPart * 1000.0;
+                QueryPerformanceCounter(&performanceCountCurrent);
+
+                double elapsedTime_ms = (performanceCountCurrent.QuadPart - performanceCountPast.QuadPart) / (double)performanceFrequency.QuadPart * 1000.0;
                 char elapsedTimeMessage[50];
                 sprintf(elapsedTimeMessage, "Elapsed time: %3.2f \n", elapsedTime_ms);
+                // TODO print fps, time per frame
                 OutputDebugStringA(elapsedTimeMessage);
+                
+                performanceCountPast = performanceCountCurrent;
             }
             
         }
